@@ -1,0 +1,17 @@
+mining_algorithm: RSAL  # RSAL or RIPU
+superpixel_algorithm: slico # seeds, slic, slico, mslic
+uncertainty_method: 'BvSB'
+shm_size: '128G'
+max_superpixel_per_image: 1024  # max super pixel number in a image
+max_kept_mining_image: 5000  # max kept mining image number
+topk_superpixel_score: 3  # topk superpixel score = image score
+# region_size: 32
+class_balance: True  # True or False
+samples_per_gpu: 2
+workers_per_gpu: 2
+fp16: True
+
+
+## ripu hyper-parameter
+ripu_region_radius: 1
+# topk_superpixel_score: 3

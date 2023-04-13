@@ -1,0 +1,12 @@
+config_file: configs/fastscnn/fast_scnn_lr0.12_8x4_160k_cityscapes.py
+max_iters: 20000
+interval: 2000
+samples_per_gpu: 2
+workers_per_gpu: 2
+max_keep_ckpts: -1
+save_least_file: True
+cfg_options: ''
+args_options: ''
+export_format: 'seg-coco:raw'  # mask annotation image:raw asset image
+shm_size: '128G'
+ignore_blank_area: False  # train model with blank area or not

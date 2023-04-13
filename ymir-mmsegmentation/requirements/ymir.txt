@@ -1,0 +1,5 @@
+pycocotools # please install without typing, then install typing
+opencv-contrib-python>=4.0
+easydict
+tqdm
+imagesize
