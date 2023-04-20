@@ -96,13 +96,13 @@ class RIPUMining(torch.nn.Module):
         return image_score
 
 
-def iter_fun(cfg, model, miner, idx, batch, N, monitor_gap) -> List[Dict]:
+def iter_fun(cfg, device,model, miner, idx, batch, N, monitor_gap) -> List[Dict]:
     """
     batch: Dict(img=[tensor,], img_metas=[List[DataContainer],])
     """
     batch_img = batch['img'][0]
     batch_meta = batch['img_metas'][0].data[0]
-    device = torch.device('cuda:0' if RANK == -1 else f'cuda:{RANK}')
+    # device = torch.device('cuda:0' if RANK == -1 else f'cuda:{RANK}')
     batch_result = model.inference(batch_img.to(device), batch_meta, rescale=True)
 
     if idx % monitor_gap == 0 and RANK in [0, -1]:
@@ -140,15 +140,27 @@ def main() -> int:
     max_barrier_times = num_image_all_rank // WORLD_SIZE // samples_per_gpu
     mmcv_cfg = mmcv.Config.fromfile(config_files[0])
     mmcv_cfg.model.train_cfg = None
+    gpu_id: str = str(ymir_cfg.param.get('gpu_id', 'cpu'))
+    if gpu_id == '' or gpu_id == 'None':
+        gpu_id = 'cpu'
+
+    if gpu_id == 'cpu':
+        device = 'cpu'
+        mmcv_cfg['norm_cfg']['type'] = 'BN'
+        mmcv_cfg["model"]["backbone"]["norm_cfg"]["type"] = "BN"
+        mmcv_cfg["model"]["decode_head"]["norm_cfg"]["type"] = "BN"
+    else:
+        gpu = LOCAL_RANK if LOCAL_RANK >= 0 else 0
+        device = f'cuda:{gpu}'
     model = init_segmentor(config=mmcv_cfg,
                            checkpoint=checkpoint_file,
-                           device='cuda:0' if RANK == -1 else f'cuda:{RANK}')
+                           device=device)
     if mmcv_cfg.with_blank_area:
         class_num = len(ymir_cfg.param.class_names) + 1
     else:
         class_num = len(ymir_cfg.param.class_names)
     miner = RIPUMining(ymir_cfg, class_num)
-    miner.to('cuda:0' if RANK == -1 else f'cuda:{RANK}')
+    miner.to(device)
 
     if get_bool(ymir_cfg, 'fp16', False):
         wrap_fp16_model(model)
@@ -169,7 +181,7 @@ def main() -> int:
     for idx, batch in enumerate(tbar):
         if idx < max_barrier_times and WORLD_SIZE > 1:
             dist.barrier()
-        batch_image_result = iter_fun(ymir_cfg, model, miner, idx, batch, N, monitor_gap)
+        batch_image_result = iter_fun(ymir_cfg, device,model, miner, idx, batch, N, monitor_gap)
         rank_image_result.extend(batch_image_result)
 
     if WORLD_SIZE == 1:

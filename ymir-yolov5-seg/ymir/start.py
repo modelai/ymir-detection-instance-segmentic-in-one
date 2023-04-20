@@ -4,7 +4,7 @@ import subprocess
 import sys
 
 from easydict import EasyDict as edict
-# from models.experimental import attempt_download
+from models.experimental import attempt_download
 from ymir.ymir_yolov5 import convert_ymir_to_yolov5, get_weight_file, process_error
 from ymir_exc import monitor
 from ymir_exc.util import YmirStage, find_free_port, get_bool, get_merged_config, write_ymir_monitor_process
@@ -47,24 +47,27 @@ def _run_training(cfg: edict) -> None:
     save_period: int = int(cfg.param.save_period)
     save_best_only: bool = get_bool(cfg, key='save_best_only', default_value=True)
     args_options: str = cfg.param.args_options
-    gpu_id: str = str(cfg.param.get('gpu_id', '0'))
-    gpu_count: int = len(gpu_id.split(',')) if gpu_id else 0
+    gpu_id: str = str(cfg.param.get('gpu_id', 'cpu'))
+    if gpu_id == '' or gpu_id == 'None':
+        gpu_id = 'cpu'
+
+    gpu_count: int = len(gpu_id.split(',')) if gpu_id!='cpu' else 0
     batch_size: int = batch_size_per_gpu * max(1, gpu_count)
     port: int = find_free_port()
     sync_bn: bool = get_bool(cfg, key='sync_bn', default_value=False)
 
     weights = get_weight_file(cfg)
-    # if not weights:
-    #     # download pretrained weight
-    #     weights = attempt_download(f'{model}.pt')
-    weights = ''
+    if not weights:
+        # download pretrained weight
+        weights = attempt_download(f'{model}.pt')
+  
     models_dir = cfg.ymir.output.models_dir
     project = os.path.dirname(models_dir)
     name = os.path.basename(models_dir)
     assert os.path.join(project, name) == models_dir
 
     commands = ['python3']
-    device = gpu_id or 'cpu'
+    device = gpu_id if gpu_id!='cpu' else 'cpu'
     if gpu_count > 1:
         commands.extend(f'-m torch.distributed.launch --nproc_per_node {gpu_count} --master_port {port}'.split())
 
@@ -105,8 +108,11 @@ def _run_mining(cfg: edict) -> None:
         convert_ymir_to_yolov5(cfg)
         logging.info(f'generate {out_dir}/data.yaml')
         write_ymir_monitor_process(cfg, task='mining', naive_stage_percent=1.0, stage=YmirStage.PREPROCESS)
-        gpu_id: str = str(cfg.param.get('gpu_id', '0'))
-        gpu_count: int = len(gpu_id.split(',')) if gpu_id else 0
+        
+        gpu_id: str = str(cfg.param.get('gpu_id', 'cpu'))
+        if gpu_id == '' or gpu_id == 'None':
+            gpu_id = 'cpu'
+        gpu_count: int = len(gpu_id.split(',')) if gpu_id!='cpu' else 0
 
         mining_algorithm = cfg.param.get('mining_algorithm', 'apis')
         support_mining_algorithms = ['apis','maskAL','aldd','cald']
@@ -132,8 +138,10 @@ def _run_infer(cfg: edict) -> None:
     logging.info(f'generate {out_dir}/data.yaml')
     write_ymir_monitor_process(cfg, task='infer', naive_stage_percent=1.0, stage=YmirStage.PREPROCESS)
 
-    gpu_id: str = str(cfg.param.get('gpu_id', '0'))
-    gpu_count: int = len(gpu_id.split(',')) if gpu_id else 0
+    gpu_id: str = str(cfg.param.get('gpu_id', 'cpu'))
+    if gpu_id == '' or gpu_id == 'None':
+        gpu_id = 'cpu'
+    gpu_count: int = len(gpu_id.split(',')) if gpu_id!='cpu' else 0
 
     if gpu_count <= 1:
         command = 'python3 ymir/mining/ymir_infer.py'

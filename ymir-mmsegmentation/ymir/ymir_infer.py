@@ -76,6 +76,7 @@ def save_infer_result(cfg: edict, results: List[Dict]) -> int:
 
 
 def main() -> int:
+
     if LOCAL_RANK != -1:
         init_dist(launcher='pytorch', backend="nccl" if dist.is_nccl_available() else "gloo")
     ymir_cfg: edict = get_merged_config()
@@ -91,9 +92,22 @@ def main() -> int:
 
     mmcv_config = mmcv.Config.fromfile(config_files[0])
     mmcv_config.model.train_cfg = None
+    gpu_id: str = str(ymir_cfg.param.get('gpu_id', 'cpu'))
+    if gpu_id == '' or gpu_id == 'None':
+        gpu_id = 'cpu'
+
+    if gpu_id == 'cpu':
+        device = 'cpu'
+        mmcv_config['norm_cfg']['type'] = 'BN'
+        mmcv_config["model"]["backbone"]["norm_cfg"]["type"] = "BN"
+        mmcv_config["model"]["decode_head"]["norm_cfg"]["type"] = "BN"
+        # mmcv_config["model"]["auxiliary_head"]["norm_cfg"]["type"] = "BN"
+    else:
+        gpu = LOCAL_RANK if LOCAL_RANK >= 0 else 0
+        device = f'cuda:{gpu}'
     model = init_segmentor(config=mmcv_config,
                            checkpoint=checkpoint_file,
-                           device=f'cuda:{RANK}' if RANK > 0 else 'cuda:0')
+                           device=device)
 
     if get_bool(ymir_cfg, 'fp16', False):
         wrap_fp16_model(model)

@@ -17,7 +17,7 @@ https://github.com/modelai/ymir-yolov5-seg
 | save_period | 10 | 整数 | 保存模型的间隔 |  建议：当save_best_only为False时，可保存 epoch/save_period 个中间结果 |
 | sync_bn | False | 布尔型 | 是否同步各gpu上的归一化层 |  建议：开启以提高训练稳定性及精度 |
 
-### 训练参数
+### 推理参数
 | 超参数 | 默认值 | 类型 | 说明 | 建议 | 
 | :----: | :----: | :----: | :----: |  :----: | 
 | shm_size | 128G | 字符串 | 受ymir后台处理，docker image 可用共享内存 |  建议大小：镜像占用GPU数 * 32G | 

@@ -32,8 +32,15 @@ EPS = 1e-12
 
 def run(ymir_cfg: edict, ymir_yolov5: YmirYolov5):
     # eg: gpu_id = 1,3,5,7  for LOCAL_RANK = 2, will use gpu 5.
-    gpu = LOCAL_RANK if LOCAL_RANK >= 0 else 0
-    device = torch.device('cuda', gpu)
+    gpu_id: str = str(ymir_cfg.param.get('gpu_id', 'cpu'))
+    if gpu_id == '' or gpu_id == 'None':
+        gpu_id = 'cpu'
+
+    if gpu_id == 'cpu':
+        device = 'cpu'
+    else:
+        gpu = LOCAL_RANK if LOCAL_RANK >= 0 else 0
+        device = torch.device('cuda', gpu)
     ymir_yolov5.to(device)
 
     load_fn = partial(load_image_file, img_size=ymir_yolov5.img_size, stride=ymir_yolov5.stride)
@@ -117,6 +124,7 @@ def main() -> int:
         ymir_mining_result = []
         for result in results:
             for img_file, score in result.items():
+                print(img_file, score)
                 ymir_mining_result.append((img_file, score))
         rw.write_mining_result(mining_result=ymir_mining_result)
     return 0

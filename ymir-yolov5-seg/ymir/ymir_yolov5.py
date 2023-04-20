@@ -1,9 +1,11 @@
 """
 utils function for ymir and yolov5
 """
+import json
+import os
 import os.path as osp
 import shutil
-from typing import Any, List
+from typing import Any, List,Dict
 
 import numpy as np
 import torch
@@ -82,9 +84,12 @@ class YmirYolov5(torch.nn.Module):
         super().__init__()
         self.cfg = cfg
 
-        self.gpu_id: str = str(cfg.param.get('gpu_id', '0'))
+        self.gpu_id: str = str(cfg.param.get('gpu_id', 'cpu'))
+        if self.gpu_id == '' or self.gpu_id == 'None':
+            self.gpu_id = 'cpu'
+
         device = select_device(self.gpu_id)  # will set CUDA_VISIBLE_DEVICES=self.gpu_id
-        self.gpu_count: int = len(self.gpu_id.split(',')) if self.gpu_id else 0
+        self.gpu_count: int = len(self.gpu_id.split(',')) if self.gpu_id!='cpu' else 0
         self.batch_size_per_gpu: int = int(cfg.param.get('batch_size_per_gpu', 4))
         self.num_workers_per_gpu: int = int(cfg.param.get('num_workers_per_gpu', 4))
         self.pin_memory: bool = get_bool(cfg, 'pin_memory', False)
@@ -218,3 +223,45 @@ def convert_ymir_to_yolov5(cfg: edict, out_dir: str = None):
 
     with open(osp.join(out_dir, 'data.yaml'), 'w') as fw:
         fw.write(yaml.safe_dump(data))
+
+def get_attachments(cfg: edict) -> Dict[str, List[str]]:
+    # 4. add attachments for quantification
+    attachments: Dict[str, List[str]] = dict()
+    attachments['images'] = []
+    attachments['configs'] = []
+    with open(cfg.ymir.input.val_index_file, 'r') as fp:
+        img_files = [line.split()[0] for line in fp.readlines()]
+
+    models_dir: str = cfg.ymir.output.models_dir
+    img_size: int = int(cfg.param.img_size)
+    attachments_image_dir = osp.join(models_dir, 'attachments/images')
+    os.makedirs(attachments_image_dir, exist_ok=True)
+    for img_f in img_files[0:200]:
+        shutil.copy(img_f, attachments_image_dir)
+        attachments['images'].append(osp.basename(img_f))
+
+    attachments_config_dir = osp.join(models_dir, 'attachments/configs')
+    os.makedirs(attachments_config_dir, exist_ok=True)
+    for config_f in ['preconfig.json', 'postconfig.json']:
+        with open(config_f, 'r') as fp:
+            quant_config = json.load(fp)
+
+        if config_f == 'preconfig.json':
+            quant_config['inputs'][0]['dims'] = [1, 3, img_size, img_size]
+        else:
+            from models.experimental import attempt_load  # scoped to avoid circular import
+            quant_model = attempt_load(f'{models_dir}/best.pt', device = 'cpu')
+            anchors = quant_model.model[-1].anchors * quant_model.stride.view(-1, 1, 1)
+            np_anchors = anchors.data.cpu().numpy().reshape(3, -1).astype(int)
+            quant_config['anchor0'] = np_anchors[0].tolist()
+            quant_config['anchor0'] = np_anchors[1].tolist()
+            quant_config['anchor0'] = np_anchors[2].tolist()
+
+        out_config_f = osp.join(attachments_config_dir, config_f)
+        with open(out_config_f, 'w') as fw:
+            json.dump(quant_config, fw)
+
+        # save to yaml with relative path to mdoels_dir
+        attachments['configs'].append(osp.basename(config_f))
+
+    return attachments

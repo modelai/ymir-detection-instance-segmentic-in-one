@@ -8,8 +8,7 @@ from typing import Any, List, Tuple
 import cv2
 import numpy as np
 from nptyping import NDArray
-
-from ymir.ymir_yolov5 import BBOX, CV_IMAGE
+from utils.ymir_yolov5 import BBOX, CV_IMAGE
 
 
 def intersect(boxes1: BBOX, boxes2: BBOX) -> NDArray:
@@ -23,13 +22,11 @@ def intersect(boxes1: BBOX, boxes2: BBOX) -> NDArray:
     '''
     n1 = boxes1.shape[0]
     n2 = boxes2.shape[0]
-    max_xy = np.minimum(
-        np.expand_dims(boxes1[:, 2:], axis=1).repeat(n2, axis=1),
-        np.expand_dims(boxes2[:, 2:], axis=0).repeat(n1, axis=0))
+    max_xy = np.minimum(np.expand_dims(boxes1[:, 2:], axis=1).repeat(n2, axis=1),
+                        np.expand_dims(boxes2[:, 2:], axis=0).repeat(n1, axis=0))
 
-    min_xy = np.maximum(
-        np.expand_dims(boxes1[:, :2], axis=1).repeat(n2, axis=1),
-        np.expand_dims(boxes2[:, :2], axis=0).repeat(n1, axis=0))
+    min_xy = np.maximum(np.expand_dims(boxes1[:, :2], axis=1).repeat(n2, axis=1),
+                        np.expand_dims(boxes2[:, :2], axis=0).repeat(n1, axis=0))
     inter = np.clip(max_xy - min_xy, a_min=0, a_max=None)  # (n1, n2, 2)
     return inter[:, :, 0] * inter[:, :, 1]  # (n1, n2)
 
@@ -52,12 +49,8 @@ def horizontal_flip(image: CV_IMAGE, bbox: BBOX) \
     return image, bbox
 
 
-def cutout(image: CV_IMAGE,
-           bbox: BBOX,
-           cut_num: int = 2,
-           fill_val: int = 0,
-           bbox_remove_thres: float = 0.4,
-           bbox_min_thres: float = 0.1) -> Tuple[CV_IMAGE, BBOX]:
+def cutout(image: CV_IMAGE, bbox: BBOX, cut_num: int = 2, fill_val: int = 0,
+           bbox_remove_thres: float = 0.4, bbox_min_thres: float = 0.1) -> Tuple[CV_IMAGE, BBOX]:
     '''
         Cutout augmentation
         image: A PIL image

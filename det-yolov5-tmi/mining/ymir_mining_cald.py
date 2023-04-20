@@ -14,14 +14,13 @@ import torch
 import torch.distributed as dist
 import torch.utils.data as td
 from easydict import EasyDict as edict
+from mining.util import (YmirDataset, collate_fn_with_fake_ann, load_image_file, load_image_file_with_ann,
+                         update_consistency)
 from tqdm import tqdm
-from ymir_exc import result_writer as rw
-from ymir_exc.util import YmirStage, get_merged_config, write_ymir_monitor_process
-
 from utils.general import scale_coords
-from ymir.mining.util import (YmirDataset, collate_fn_with_fake_ann, load_image_file, load_image_file_with_ann,
-                              update_consistency)
-from ymir.ymir_yolov5 import YmirYolov5
+from utils.ymir_yolov5 import YmirYolov5
+from ymir_exc import result_writer as rw
+from ymir_exc.util import YmirStage, get_merged_config
 
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
@@ -30,8 +29,15 @@ WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
 
 def run(ymir_cfg: edict, ymir_yolov5: YmirYolov5):
     # eg: gpu_id = 1,3,5,7  for LOCAL_RANK = 2, will use gpu 5.
-    gpu = LOCAL_RANK if LOCAL_RANK >= 0 else 0
-    device = torch.device('cuda', gpu)
+    gpu_id: str = str(ymir_cfg.param.get('gpu_id', 'cpu'))
+    if gpu_id == '' or gpu_id == 'None':
+        gpu_id = 'cpu'
+
+    if gpu_id == 'cpu':
+        device = 'cpu'
+    else:
+        gpu = LOCAL_RANK if LOCAL_RANK >= 0 else 0
+        device = torch.device('cuda', gpu)
     ymir_yolov5.to(device)
 
     load_fn = partial(load_image_file, img_size=ymir_yolov5.img_size, stride=ymir_yolov5.stride)
@@ -46,7 +52,6 @@ def run(ymir_cfg: edict, ymir_yolov5: YmirYolov5):
     with open(ymir_cfg.ymir.input.candidate_index_file, 'r') as f:
         images = [line.strip() for line in f.readlines()]
 
-    max_barrier_times = (len(images) // max(1, WORLD_SIZE)) // batch_size_per_gpu
     # origin dataset
     if RANK != -1:
         images_rank = images[RANK::WORLD_SIZE]
@@ -65,20 +70,17 @@ def run(ymir_cfg: edict, ymir_yolov5: YmirYolov5):
     mining_results = dict()
     beta = 1.3
     dataset_size = len(images_rank)
-    pbar = tqdm(origin_dataset_loader) if RANK in [-1, 0] else origin_dataset_loader
+    pbar = tqdm(origin_dataset_loader) if RANK == 0 else origin_dataset_loader
     for idx, batch in enumerate(pbar):
         # batch-level sync, avoid 30min time-out error
-        if WORLD_SIZE > 1 and idx < max_barrier_times:
+        if LOCAL_RANK != -1:
             dist.barrier()
 
         with torch.no_grad():
             pred = ymir_yolov5.forward(batch['image'].float().to(device), nms=True)
 
         if RANK in [-1, 0]:
-            write_ymir_monitor_process(ymir_cfg,
-                                       task='mining',
-                                       naive_stage_percent=0.3 * idx * batch_size_per_gpu / dataset_size,
-                                       stage=YmirStage.TASK)
+            ymir_yolov5.write_monitor_logger(stage=YmirStage.TASK, p=idx * batch_size_per_gpu / dataset_size)
         preprocess_image_shape = batch['image'].shape[2:]
         for inner_idx, det in enumerate(pred):  # per image
             result_per_image = []
@@ -108,13 +110,14 @@ def run(ymir_cfg: edict, ymir_yolov5: YmirYolov5):
 
     dataset_size = len(results)
     monitor_gap = max(1, dataset_size // 1000 // batch_size_per_gpu)
-    pbar = tqdm(aug_dataset_loader) if RANK in [0, -1] else aug_dataset_loader
+    pbar = tqdm(aug_dataset_loader) if RANK == 0 else aug_dataset_loader
     for idx, batch in enumerate(pbar):
+        # batch-level sync, avoid 30min time-out error
+        if LOCAL_RANK != -1:
+            dist.barrier()
+
         if idx % monitor_gap == 0 and RANK in [-1, 0]:
-            write_ymir_monitor_process(ymir_cfg,
-                                       task='mining',
-                                       naive_stage_percent=0.3 + 0.7 * idx * batch_size_per_gpu / dataset_size,
-                                       stage=YmirStage.TASK)
+            ymir_yolov5.write_monitor_logger(stage=YmirStage.TASK, p=idx * batch_size_per_gpu / dataset_size)
 
         batch_consistency = [0.0 for _ in range(len(batch['image_file']))]
         aug_keys = ['flip', 'cutout', 'rotate', 'resize']
@@ -164,12 +167,14 @@ def run(ymir_cfg: edict, ymir_yolov5: YmirYolov5):
             image_file = batch['image_file'][inner_idx]
             mining_results[image_file] = batch_consistency[inner_idx]
 
-    torch.save(mining_results, f'/out/mining_results_{max(0,RANK)}.pt')
-
+    if RANK!= -1:
+        torch.save(mining_results, f'/out/mining_results_{RANK}.pt')
+    else:
+        torch.save(mining_results, f'/out/mining_results_0.pt')
 
 def main() -> int:
     ymir_cfg = get_merged_config()
-    ymir_yolov5 = YmirYolov5(ymir_cfg)
+    ymir_yolov5 = YmirYolov5(ymir_cfg, task='mining')
 
     if LOCAL_RANK != -1:
         assert torch.cuda.device_count() > LOCAL_RANK, 'insufficient CUDA devices for DDP command'
@@ -179,7 +184,7 @@ def main() -> int:
     run(ymir_cfg, ymir_yolov5)
 
     # wait all process to save the mining result
-    if WORLD_SIZE > 1:
+    if LOCAL_RANK != -1:
         dist.barrier()
 
     if RANK in [0, -1]:
@@ -192,6 +197,10 @@ def main() -> int:
             for img_file, score in result.items():
                 ymir_mining_result.append((img_file, score))
         rw.write_mining_result(mining_result=ymir_mining_result)
+
+    if LOCAL_RANK != -1:
+        print(f'rank: {RANK}, start destroy process group')
+    dist.destroy_process_group()
     return 0
 
 

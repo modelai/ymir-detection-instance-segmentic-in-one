@@ -46,7 +46,7 @@ COPY ./ymir-yolov5-seg/requirements.txt /workspace/
 RUN pip config set global.index-url http://mirrors.aliyun.com/pypi/simple
 RUN pip config set install.trusted-host mirrors.aliyun.com
 # install ymir-exc sdk
-RUN pip install "git+https://github.com/modelai/ymir-executor-sdk.git@ymir2.1.0"
+RUN pip install "git+https://github.com/modelai/ymir-executor-sdk.git@ymir2.4.0"
 RUN pip install -r /app/ymir-mmsegmentation/requirements.txt && pip install -r /workspace/requirements.txt
 ENV PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 # Download pretrained weight and font file

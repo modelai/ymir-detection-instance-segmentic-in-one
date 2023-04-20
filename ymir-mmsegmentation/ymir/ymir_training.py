@@ -12,8 +12,12 @@ from ymir.ymir_util import (convert_annotation_dataset, write_last_ymir_result_f
 
 def main() -> int:
     ymir_cfg: edict = get_merged_config()
-    gpu_id: str = str(ymir_cfg.param.get('gpu_id', '0'))
-    gpu_count: int = len(gpu_id.split(','))
+
+    gpu_id: str = str(ymir_cfg.param.get('gpu_id', 'cpu'))
+    if gpu_id == '' or gpu_id == 'None':
+        gpu_id = 'cpu'
+    gpu_count: int = len(gpu_id.split(',')) if gpu_id!='cpu' else 0
+    
     with_blank_area = train_with_black_area_or_not(ymir_cfg)
     logging.info(f'with_blank_area = {with_blank_area}')
 

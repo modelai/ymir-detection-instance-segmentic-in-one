@@ -753,10 +753,14 @@ class LoadImagesAndLabels(Dataset):
                 im = cv2.imread(f)  # BGR
                 assert im is not None, f'Image Not Found {f}'
             h0, w0 = im.shape[:2]  # orig hw
-            r = self.img_size / max(h0, w0)  # ratio
-            if r != 1:  # if sizes are not equal
-                interp = cv2.INTER_LINEAR if (self.augment or r > 1) else cv2.INTER_AREA
-                im = cv2.resize(im, (int(w0 * r), int(h0 * r)), interpolation=interp)
+            if h0 != self.img_size or w0 != self.img_size:
+                im = cv2.resize(im,
+                                (self.img_size, self.img_size),
+                                interpolation=cv2.INTER_LINEAR)
+            # r = self.img_size / max(h0, w0)  # ratio
+            # if r != 1:  # if sizes are not equal
+            #     interp = cv2.INTER_LINEAR if (self.augment or r > 1) else cv2.INTER_AREA
+            #     im = cv2.resize(im, (int(w0 * r), int(h0 * r)), interpolation=interp)
             return im, (h0, w0), im.shape[:2]  # im, hw_original, hw_resized
         return self.ims[i], self.im_hw0[i], self.im_hw[i]  # im, hw_original, hw_resized
 

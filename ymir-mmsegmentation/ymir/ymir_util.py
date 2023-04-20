@@ -4,7 +4,7 @@ import logging
 import os
 import os.path as osp
 import warnings
-from typing import Any, Iterable, List, Union
+from typing import Any, Iterable, List, Union,Tuple
 
 import cv2
 import numpy as np
@@ -24,6 +24,7 @@ def _find_any(str1: str, sub_strs: List[str]) -> bool:
     return False
 
 
+    return model_params_path
 def get_best_weight_file(ymir_cfg: edict):
     """
     find the best weight file for ymir-executor

@@ -1,6 +1,6 @@
 from easydict import EasyDict as edict
 from mmcv.utils import Config
-
+import  os
 from mmseg.datasets import build_dataloader, build_dataset
 
 
@@ -18,21 +18,25 @@ def get_dataloader(mmcv_cfg: Config, ymir_cfg: edict):
     mmcv_cfg.data.test.test_mode = True
     mmcv_cfg.data.test.split = ymir_cfg.ymir.input.candidate_index_file
 
-    gpu_id: str = str(ymir_cfg.param.get('gpu_id', '0'))
-    gpu_count: int = len(gpu_id.split(','))
+    gpu_id: str = str(ymir_cfg.param.get('gpu_id', 'cpu'))
+    if gpu_id == '' or gpu_id == 'None':
+        gpu_id = 'cpu'
+    gpu_count: int = len(gpu_id.split(',')) if gpu_id!='cpu' else 0
 
     if gpu_count > 1:
         dist = True
         mmcv_cfg.gpu_ids = [int(x) for x in gpu_id.split(',')]
-    else:
+    elif gpu_count==1:
         dist = False
         mmcv_cfg.gpu_ids = [int(x) for x in gpu_id.split(',')]
-
+    else:
+        dist = False
+        mmcv_cfg.gpu_ids=[]
     dataset = build_dataset(mmcv_cfg.data.test)
     # The default loader config
     loader_cfg = dict(
         # cfg.gpus will be ignored if distributed
-        num_gpus=len(mmcv_cfg.gpu_ids),
+        num_gpus=len(mmcv_cfg.gpu_ids) if mmcv_cfg.gpu_ids else 1,
         dist=dist,
         shuffle=False)
     # The overall dataloader settings

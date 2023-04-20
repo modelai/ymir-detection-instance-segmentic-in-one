@@ -7,8 +7,11 @@ from ymir_exc.util import find_free_port, get_merged_config
 
 def main() -> int:
     ymir_cfg = get_merged_config()
-    gpu_id: str = str(ymir_cfg.param.get('gpu_id', '0'))
-    gpu_count: int = ymir_cfg.param.get('gpu_count', None) or len(gpu_id.split(','))
+    gpu_id: str = str(ymir_cfg.param.get('gpu_id', 'cpu'))
+    if gpu_id == '' or gpu_id == 'None':
+        gpu_id = 'cpu'
+
+    gpu_count: int = len(gpu_id.split(',')) if gpu_id!='cpu' else 0
 
     mining_cmd = 'python3 ymir/ymir_mining.py'
     if gpu_count <= 1:

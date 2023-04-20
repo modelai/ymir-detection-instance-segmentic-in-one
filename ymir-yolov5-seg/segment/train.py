@@ -61,7 +61,7 @@ from utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, select_devi
 from ymir_exc.util import YmirStage, get_merged_config, write_ymir_monitor_process, write_ymir_training_result
 from utils.loggers import Loggers
 from dropblock import DropBlock2D
-from ymir.ymir_yolov5 import process_error
+from ymir.ymir_yolov5 import process_error,get_attachments
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
 WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
@@ -431,8 +431,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 # Save last, best and delete
    
                 torch.save(ckpt, last)
-                
+
                 if best_fitness == fi:
+                    best_fitness = fi
                     torch.save(ckpt, best)
 
                     
@@ -542,6 +543,17 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             logger.log_images(files, "Results", epoch + 1)
             logger.log_images(sorted(save_dir.glob('val*.jpg')), "Validation", epoch + 1)
     torch.cuda.empty_cache()
+    if RANK in [-1, 0]:
+        attachments = get_attachments(ymir_cfg)
+        write_ymir_training_result(ymir_cfg,
+                            evaluation_result={'maskAP':float(best_fitness[0]),
+                                            'boxAP':best_boxAP,
+                                            'tp':int(mask_tp_fp[0]),
+                                            'fp':int(mask_tp_fp[1]),
+                                            'fn':int(mask_tp_fp[2])},
+                                            id='best',
+                                            files=[str(best), str(onnx_file)],
+                                            attachments=attachments)
     return results
 
 
